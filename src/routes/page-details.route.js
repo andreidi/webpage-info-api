@@ -3,6 +3,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const { FIELDS_ENUM } = require('../utils/fields.enum');
+const { CONSTANTS } = require('../utils/constants');
+const { STATUS, MESSAGES, HTTP_CODES } = CONSTANTS;
 
 const router = express.Router();
 
@@ -12,19 +14,24 @@ router.get('/api/page-details', async (req, res) => {
   const url = req.query.url;
 
   if (!url) {
-    return res.json({ error: 'URL is required' }, 400);
+    return res.status(HTTP_CODES.BAD_REQUEST).json({
+      status: STATUS.ERROR,
+      error: MESSAGES.URL_REQUIRED
+    });
   }
 
   const fields = req.query.field || [];
 
   try {
-    const { data } = await axios.get(url);
+    const { data } = await axios.get(url, {
+      validateStatus: status => status < HTTP_CODES.INTERNAL_SERVER_ERROR
+    });
     const $ = cheerio.load(data);
 
     const details = { url };
 
     if (fields.includes(FIELDS_ENUM.TITLE) || !fields.length) {
-      const title = $('head > title').text() || $('title').text();
+      const title = $('head > title').text() || $('title:first').text();
 
       details[FIELDS_ENUM.TITLE] = title;
     }
@@ -51,6 +58,10 @@ router.get('/api/page-details', async (req, res) => {
 
         if (name && content) {
           meta[name] = content;
+
+          if (name.includes(FIELDS_ENUM.TITLE) && !details[FIELDS_ENUM.TITLE]) {
+            details[FIELDS_ENUM.TITLE] = content;
+          }
         }
       });
 
@@ -58,15 +69,15 @@ router.get('/api/page-details', async (req, res) => {
     }
 
     res.json({
-      status: 'success',
+      status: STATUS.SUCCESS,
       data: details
     });
   } catch (error) {
     console.error(error.toJSON());
 
     res.status(500).json({
-      status: 'error',
-      message: 'Unable to retrieve page details'
+      status: STATUS.ERROR,
+      message: MESSAGES.GENERIC_ERROR
     });
   }
 });
